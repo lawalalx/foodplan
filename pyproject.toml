@@ -1,0 +1,32 @@
+[project]
+name = "food"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncpg>=0.28.0",
+    "chromadb",
+    "fastapi>=0.124.4",
+    "langchain",
+    "langchain-chroma",
+    "langchain-community",
+    "langchain-groq",
+    "langchain-huggingface",
+    "langchain-openai",
+    "langchain-tavily",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "langgraph-cli[inmem]",
+    "openai>=2.11.0",
+    "openpyxl",
+    "psycopg[binary,pool]",
+    "pydub",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.20",
+    "sentence-transformers",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "sqlmodel>=0.0.14",
+    "unstructured[all-docs]",
+    "uvicorn>=0.38.0",
+]

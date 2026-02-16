@@ -1,0 +1,5 @@
+venv/
+.venv/
+MYREADME.md
+.env.env
+.env
