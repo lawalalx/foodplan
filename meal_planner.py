@@ -139,73 +139,95 @@ POPULAR NIGERIAN MEALS TO INCLUDE:
         """Create the prompt for meal plan generation."""
         days = 7 if duration == "weekly" else 30
         
+        # Use format examples but avoid concrete sample dishes that the model
+        # could repeat verbatim. Provide placeholders and an explicit instruction
+        # not to reuse the examples as actual plan items.
         return f"""Generate a {duration} meal plan for {days} days.
 
 USER CONTEXT:
 {context}
 
 REQUIREMENTS:
-1. Return ONLY valid JSON (no markdown, no explanations)
-2. Format:
+1. Return ONLY valid JSON (no markdown, no explanations).
+2. Use the exact JSON structure below. Use meal names appropriate to the
+     user's context; do NOT reuse the placeholder/example names verbatim.
+3. Format:
 {{
-  "meal_plan": {{
-    "day_1": {{
-      "breakfast": "Pap & Akara",
-      "lunch": "Egusi Soup & Swallow",
-      "dinner": "Jollof Rice & Stew"
+    "meal_plan": {{
+        "day_1": {{
+            "breakfast": "Breakfast Name",
+            "lunch": "Lunch Name",
+            "dinner": "Dinner Name"
+        }},
+        "day_2": {{ ... }}
     }},
-    "day_2": {{ ... }}
-  }},
-  "summary": {{
-    "total_days": {days},
-    "nutritional_focus": "balanced with protein emphasis",
-    "budget_estimate": "₦X,XXX per day",
-    "prep_tips": ["tip1", "tip2"]
-  }}
+    "summary": {{
+        "total_days": {days},
+        "nutritional_focus": "balanced with protein emphasis",
+        "budget_estimate": "₦X,XXX per day",
+        "prep_tips": ["tip1", "tip2"]
+    }}
 }}
 
-3. Each day must have breakfast, lunch, dinner
-4. Meals should be varied and practical
-5. Include at least 3 Nigerian meals per week
-6. Consider dietary restrictions mentioned in context
-7. Meals should be suitable for the stated household size
-8. Budget-friendly means using affordable proteins (beans, eggs) and local vegetables
+4. Each day must have breakfast, lunch and dinner.
+5. Vary meals across days and prioritize items that fit the user's budget
+     and dietary restrictions in the context.
+6. If the user has a history of frequently bought ingredients, favour
+     meals that reuse those ingredients where sensible.
 
-Generate the meal plan now:"""
+Generate the meal plan now and return only the JSON object described above."""
     
     def _parse_meal_plan_response(self, response: str, duration: str) -> Dict:
         """Parse the LLM response into a structured meal plan."""
+        # Try direct parse, then try to extract a JSON substring, then request
+        # a reformat from the model. If all fails, return a neutral generic
+        # fallback (no culturally-specific hardcoded dishes) so the plan is
+        # deterministic but unbiased.
         try:
-            # Extract JSON from response
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON found in response")
-            
-            json_str = response[json_start:json_end]
-            data = json.loads(json_str)
-            
-            # Extract meal plan
-            meal_plan = data.get("meal_plan", {})
-            
-            # Standardize format if needed
-            if not meal_plan:
+            # 1) Try parsing the raw response as JSON
+            data = json.loads(response)
+        except json.JSONDecodeError:
+            try:
+                # 2) Attempt to extract the first JSON object in the string
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                if json_start == -1 or json_end == 0:
+                    raise ValueError("No JSON found in response")
+                json_str = response[json_start:json_end]
+                data = json.loads(json_str)
+            except Exception as e:
+                logger.warning(f"First parse failed: {e}. Attempting LLM reformat.")
+                logger.debug(f"Original response (truncated): {response[:500]}")
+                # 3) Ask LLM to reformat the previous reply into strict JSON
+                try:
+                    retry_messages = [
+                        SystemMessage(content="You are a strict JSON formatter. Return ONLY valid JSON."),
+                        HumanMessage(content=("The model returned a non-JSON or malformed response. "
+                                              "Please reformat the following content into valid JSON only:\n\n" + response))
+                    ]
+                    retry_resp = self.llm.invoke(retry_messages)
+                    data = json.loads(retry_resp.content)
+                except Exception as e2:
+                    logger.error(f"LLM reformat failed: {e2}")
+                    # Neutral generic fallback (no cultural-specific hardcoding)
+                    return {
+                        "day_1": {
+                            "breakfast": "Breakfast 1",
+                            "lunch": "Lunch 1",
+                            "dinner": "Dinner 1"
+                        }
+                    }
+
+        # Extract meal plan
+        meal_plan = data.get("meal_plan", {}) if isinstance(data, dict) else {}
+
+        # Standardize format: if top-level is already a day mapping, accept it
+        if not meal_plan and isinstance(data, dict):
+            # If data looks like days mapping (day_1 keys), treat it as meal_plan
+            if any(k.startswith("day_") for k in data.keys()):
                 meal_plan = data
-            
-            return meal_plan
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse meal plan JSON: {e}")
-            logger.error(f"Response: {response[:500]}")
-            # Return a basic fallback structure
-            return {
-                "day_1": {
-                    "breakfast": "Pap & Akara",
-                    "lunch": "Rice & Beans",
-                    "dinner": "Jollof Rice & Stew"
-                }
-            }
+
+        return meal_plan
 
 
 class IngredientGenerator:
