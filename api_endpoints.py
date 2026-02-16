@@ -95,10 +95,51 @@ def setup_meal_planning_routes(app: FastAPI):
     meal_generator = MealPlanGenerator()
     ingredient_generator = IngredientGenerator()
     learning_system = UserLearningSystem()
-    
+    import os
+    import httpx
+    import asyncio
+
     # Placeholder for product mapper - initialize with empty catalog
-    # The catalog will be populated by your existing backend
+    # The catalog will be populated by your existing backend (see PRODUCT_CATALOG_URL)
     ingredient_mapper = IngredientProductMapper(product_catalog=[])
+
+    PRODUCT_CATALOG_URL = os.environ.get("PRODUCT_CATALOG_URL") or os.environ.get("BACKEND_CATALOG_URL")
+    # Background refresh interval (seconds)
+    CATALOG_REFRESH_INTERVAL = int(os.environ.get("CATALOG_REFRESH_INTERVAL", "600"))
+
+    async def _catalog_refresher():
+        """Background task that periodically refreshes the product catalog."""
+        while True:
+            try:
+                if PRODUCT_CATALOG_URL:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(PRODUCT_CATALOG_URL)
+                        if resp.status_code == 200:
+                            products = resp.json()
+                            ingredient_mapper.update_catalog(products)
+                            logger.info(f"Catalog refreshed with {len(products)} items")
+                        else:
+                            logger.debug(f"Catalog refresh returned status {resp.status_code}")
+            except asyncio.CancelledError:
+                logger.info("Catalog refresher cancelled")
+                break
+            except Exception as e:
+                logger.warning(f"Catalog refresher error: {e}")
+
+            await asyncio.sleep(CATALOG_REFRESH_INTERVAL)
+
+    # Register startup/shutdown handlers to manage the background refresher
+    app.add_event_handler(
+        "startup",
+        lambda: setattr(app.state, "_catalog_task", asyncio.create_task(_catalog_refresher()))
+    )
+
+    def _stop_catalog_task():
+        task = getattr(app.state, "_catalog_task", None)
+        if task:
+            task.cancel()
+
+    app.add_event_handler("shutdown", _stop_catalog_task)
     
     # ========== EPIC 1: MEAL PLAN GENERATION ==========
     
@@ -218,6 +259,21 @@ def setup_meal_planning_routes(app: FastAPI):
                     detail=f"Could not generate ingredients for '{request.meal_name}'"
                 )
             
+            # If mapper has no catalog, try to load it from backend
+            if not ingredient_mapper.product_catalog and PRODUCT_CATALOG_URL:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(PRODUCT_CATALOG_URL)
+                        if resp.status_code == 200:
+                            products = resp.json()
+                            # Expecting list of products with fields: id, name, category, price, availability_status
+                            ingredient_mapper.update_catalog(products)
+                            logger.info(f"Loaded product catalog with {len(products)} items from backend")
+                        else:
+                            logger.warning(f"Failed to load product catalog: {resp.status_code}")
+                except Exception as e:
+                    logger.warning(f"Error fetching product catalog: {e}")
+
             # Map to QuickMarket products
             mapped_ingredients = []
             total_cost = 0
@@ -229,6 +285,26 @@ def setup_meal_planning_routes(app: FastAPI):
                     quantity=ingredient.get("quantity", 0),
                     unit=ingredient.get("unit", "")
                 )
+
+                # If still unmatched and backend supports search, try single-item search fallback
+                if (not mapped.get("mapped_product_id") and PRODUCT_CATALOG_URL):
+                    try:
+                        search_url = PRODUCT_CATALOG_URL.rstrip('/') + "/search"
+                        params = {"q": ingredient.get("name")}
+                        async with httpx.AsyncClient(timeout=6.0) as client:
+                            sresp = await client.get(search_url, params=params)
+                            if sresp.status_code == 200:
+                                results = sresp.json()
+                                if isinstance(results, list) and results:
+                                    # Update mapper catalog with these results and remap
+                                    ingredient_mapper.update_catalog(results + ingredient_mapper.product_catalog)
+                                    mapped = ingredient_mapper.map_ingredient_to_product(
+                                        ingredient_name=ingredient.get("name"),
+                                        quantity=ingredient.get("quantity", 0),
+                                        unit=ingredient.get("unit", "")
+                                    )
+                    except Exception as se:
+                        logger.debug(f"Search fallback failed for '{ingredient.get('name')}': {se}")
                 mapped_ingredients.append(mapped)
                 
                 if mapped["availability_status"] != "available":
