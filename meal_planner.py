@@ -22,7 +22,7 @@ class MealPlanGenerator:
     def __init__(self):
         """Initialize the meal plan generator with LLM."""
         self.llm = ChatGroq(
-            model="mixtral-8x7b-32768",
+            model="llama-3.3-70b-versatile",
             temperature=0.7,
             api_key=os.environ.get("GROQ_API_KEY")
         )
@@ -214,7 +214,7 @@ class IngredientGenerator:
     def __init__(self):
         """Initialize the ingredient generator."""
         self.llm = ChatGroq(
-            model="mixtral-8x7b-32768",
+            model="llama-3.3-70b-versatile",
             temperature=0.7,
             api_key=os.environ.get("GROQ_API_KEY")
         )

@@ -455,7 +455,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     groq_api_key: str
-    groq_model: str = "mixtral-8x7b-32768"
+    groq_model: str = "llama-3.3-70b-versatile"
     database_url: str
     product_catalog_api: str
     redis_url: str = "redis://localhost:6379"
