@@ -242,6 +242,46 @@ class IngredientProductMapper:
         logger.info(f"Product catalog updated with {len(new_products)} products")
 
 
+import httpx
+
+async def fetch_all_products(base_url: str, limit: int = 100, max_pages: int = 20):
+    """
+    Fetch all products across paginated API.
+    Stops when empty page is returned or max_pages reached.
+    """
+    all_products = []
+    
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for page in range(1, max_pages + 1):
+            try:
+                url = f"{base_url}?page={page}&limit={limit}"
+                resp = await client.get(url)
+
+                if resp.status_code != 200:
+                    break
+
+                data = resp.json()
+
+                # Handle both formats:
+                # Case 1: {"success": true, "data": [...]}
+                # Case 2: [...]
+                products = data.get("data") if isinstance(data, dict) else data
+
+                if not products:
+                    break  # No more pages
+
+                all_products.extend(products)
+
+                # If returned less than limit → last page
+                if len(products) < limit:
+                    break
+
+            except Exception as e:
+                logger.debug(f"Pagination fetch failed at page {page}: {e}")
+                break
+
+    return all_products
+
 
 
 class CartBuilder:

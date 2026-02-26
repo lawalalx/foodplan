@@ -13,7 +13,7 @@ import uuid
 import logging
 
 from meal_planner import MealPlanGenerator, IngredientGenerator
-from ingredient_mapper import IngredientProductMapper, CartBuilder
+from ingredient_mapper import IngredientProductMapper, CartBuilder, fetch_all_products
 from learning_system import UserLearningSystem
 from utils.user_preferences import get_latest_user_preferences
 from config import get_db_session
@@ -503,24 +503,24 @@ def setup_meal_planning_routes(app: FastAPI):
                 )
 
                 # If still unmatched and backend supports search, try single-item search fallback
-                if (not mapped.get("mapped_product_id") and PRODUCT_CATALOG_URL):
+                if not mapped.get("mapped_product_id") and PRODUCT_CATALOG_URL:
                     try:
-                        search_url = PRODUCT_CATALOG_URL.rstrip('/') + "/search"
-                        params = {"q": ingredient.get("name")}
-                        async with httpx.AsyncClient(timeout=6.0) as client:
-                            sresp = await client.get(search_url, params=params)
-                            if sresp.status_code == 200:
-                                results = sresp.json()
-                                if isinstance(results, list) and results:
-                                    # Update mapper catalog with these results and remap
-                                    ingredient_mapper.update_catalog(results + ingredient_mapper.product_catalog)
-                                    mapped = ingredient_mapper.map_ingredient_to_product(
-                                        ingredient_name=ingredient.get("name"),
-                                        quantity=ingredient.get("quantity", 0),
-                                        unit=ingredient.get("unit", "")
-                                    )
+                        full_catalog = await fetch_all_products(PRODUCT_CATALOG_URL)
+
+                        if full_catalog:
+                            ingredient_mapper.update_catalog(full_catalog)
+
+                            mapped = ingredient_mapper.map_ingredient_to_product(
+                                ingredient_name=ingredient.get("name"),
+                                quantity=ingredient.get("quantity", 0),
+                                unit=ingredient.get("unit", "")
+                            )
+
                     except Exception as se:
-                        logger.debug(f"Search fallback failed for '{ingredient.get('name')}': {se}")
+                        logger.debug(f"Full catalog pagination failed: {se}")
+                                
+                
+                
                 mapped_ingredients.append(mapped)
                 
                 if mapped["availability_status"] != "available":
