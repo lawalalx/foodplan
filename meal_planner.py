@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 import os
 from dotenv import load_dotenv
 
@@ -50,6 +51,7 @@ class MealPlanGenerator:
         Returns:
             Dict with meal plan structure {day: [meals]}
         """
+        
         # Build user context
         context = self._build_user_context(
             meal_preference, purchase_history, household_size, budget_level
@@ -75,6 +77,9 @@ class MealPlanGenerator:
         except Exception as e:
             logger.error(f"Error generating meal plan: {e}")
             raise
+    
+    
+    
     
     def _build_user_context(
         self,
@@ -112,28 +117,29 @@ class MealPlanGenerator:
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for meal plan generation."""
+        
         return """You are a meal planning AI specialist for QuickMarket, a Nigerian grocery delivery service.
-Your role is to generate personalized weekly or monthly meal plans for users.
+        Your role is to generate personalized weekly or monthly meal plans for users.
 
-GUIDELINES:
-1. Focus on Nigerian and African cuisine with international options
-2. Ensure nutritional balance: proteins, vegetables, grains, healthy fats
-3. Consider user preferences, budget, and household size
-4. Meals should be practical and cookable by average home cooks
-5. Vary meals to reduce monotony
-6. For budget-friendly plans: suggest beans, rice, eggs, local vegetables
-7. For moderate/premium: include more proteins (fish, meat) and variety
-8. Always include breakfast, lunch, and dinner (or as requested)
-9. Return ONLY valid JSON format
+        GUIDELINES:
+        1. Focus on Nigerian and African cuisine with international options
+        2. Ensure nutritional balance: proteins, vegetables, grains, healthy fats
+        3. Consider user preferences, budget, and household size
+        4. Meals should be practical and cookable by average home cooks
+        5. Vary meals to reduce monotony
+        6. For budget-friendly plans: suggest beans, rice, eggs, local vegetables
+        7. For moderate/premium: include more proteins (fish, meat) and variety
+        8. Always include breakfast, lunch, and dinner (or as requested)
+        9. Return ONLY valid JSON format
 
-POPULAR NIGERIAN MEALS TO INCLUDE:
-- Jollof rice, fried rice, coconut rice
-- Egusi soup, okra soup, pepper soup
-- Beans, garri, eba, swallow
-- Suya, moi moi, akara
-- Stew (tomato, pepper), curry
-- Grilled fish, pepper soup
-"""
+        POPULAR NIGERIAN MEALS TO INCLUDE:
+        - Jollof rice, fried rice, coconut rice
+        - Egusi soup, okra soup, pepper soup
+        - Beans, garri, eba, swallow
+        - Suya, moi moi, akara
+        - Stew (tomato, pepper), curry
+        - Grilled fish, pepper soup
+        """
     
     def _create_meal_plan_prompt(self, duration: str, context: str) -> str:
         """Create the prompt for meal plan generation."""
@@ -144,38 +150,40 @@ POPULAR NIGERIAN MEALS TO INCLUDE:
         # not to reuse the examples as actual plan items.
         return f"""Generate a {duration} meal plan for {days} days.
 
-USER CONTEXT:
-{context}
+        USER CONTEXT:
+        {context}
 
-REQUIREMENTS:
-1. Return ONLY valid JSON (no markdown, no explanations).
-2. Use the exact JSON structure below. Use meal names appropriate to the
-     user's context; do NOT reuse the placeholder/example names verbatim.
-3. Format:
-{{
-    "meal_plan": {{
-        "day_1": {{
-            "breakfast": "Breakfast Name",
-            "lunch": "Lunch Name",
-            "dinner": "Dinner Name"
-        }},
-        "day_2": {{ ... }}
-    }},
-    "summary": {{
-        "total_days": {days},
-        "nutritional_focus": "balanced with protein emphasis",
-        "budget_estimate": "₦X,XXX per day",
-        "prep_tips": ["tip1", "tip2"]
-    }}
-}}
+        REQUIREMENTS:
+        1. Return ONLY valid JSON (no markdown, no explanations).
+        2. Use the exact JSON structure below. Use meal names appropriate to the
+            user's context; do NOT reuse the placeholder/example names verbatim.
+        3. Format:
+        {{
+            "meal_plan": {{
+                "day_1": {{
+                    "breakfast": "Breakfast Name",
+                    "lunch": "Lunch Name",
+                    "dinner": "Dinner Name"
+                }},
+                "day_2": {{ ... }}
+            }},
+            "summary": {{
+                "total_days": {days},
+                "nutritional_focus": "balanced with protein emphasis",
+                "budget_estimate": "₦X,XXX per day",
+                "prep_tips": ["tip1", "tip2"]
+            }}
+        }}
 
-4. Each day must have breakfast, lunch and dinner.
-5. Vary meals across days and prioritize items that fit the user's budget
-     and dietary restrictions in the context.
-6. If the user has a history of frequently bought ingredients, favour
-     meals that reuse those ingredients where sensible.
+        4. Each day must have breakfast, lunch and dinner.
+        5. Vary meals across days and prioritize items that fit the user's budget
+            and dietary restrictions in the context.
+        6. If the user has a history of frequently bought ingredients, favour
+            meals that reuse those ingredients where sensible.
 
-Generate the meal plan now and return only the JSON object described above."""
+        Generate the meal plan now and return only the JSON object described above.
+        
+        """
     
     def _parse_meal_plan_response(self, response: str, duration: str) -> Dict:
         """Parse the LLM response into a structured meal plan."""
@@ -243,6 +251,7 @@ class IngredientGenerator:
         # Load ingredient templates
         self.ingredient_database = self._load_ingredient_templates()
     
+    
     def generate_ingredients(
         self,
         meal_name: str,
@@ -260,26 +269,40 @@ class IngredientGenerator:
         Returns:
             List of ingredients with quantities
         """
-        prompt = f"""Generate a detailed ingredient list for "{meal_name}".
 
-REQUIREMENTS:
-1. Return ONLY valid JSON (no markdown)
-2. Adjust portions for {household_size} people, {servings} serving(s)
-3. Include quantities in practical units (kg, cups, tablespoons, pieces, etc.)
-4. Return format:
-[
-  {{"name": "ingredient name", "quantity": 500, "unit": "g", "notes": "optional notes"}},
-  {{"name": "ingredient name", "quantity": 2, "unit": "cups", "notes": "optional notes"}}
-]
+        # 1. Define the System Prompt (Behavior & Rules)
+        system_content = (
+            "You are a Nigerian cooking expert and grocery catalog mapper. "
+            "Your goal is to generate ingredients that match a store's product list. "
+            "\n\nSTRICT NAMING RULES:\n"
+            "1. Use ONLY exact generic names: 'Rice', 'Tomato Paste', 'Vegetable Oil', 'Onion', "
+            "'Ginger', 'Garlic', 'Salt', 'Curry Powder', 'Thyme', 'Chicken', 'Beef', 'Pepper', 'Crayfish'.\n"
+            "2. Do NOT use descriptive adjectives (e.g., NOT 'fresh onions', NOT 'long-grain rice').\n"
+            "3. Units must be metric (kg, g, l, ml) or 'pieces'. Avoid 'cups'.\n"
+            "4. Return ONLY valid JSON. No markdown backticks, no text explanations."
+        )
 
-Generate ingredients for {meal_name}:"""
-        
+        # 2. Define the Human Prompt (The dynamic variables)
+        human_content = (
+            "Generate a JSON ingredient list for '{meal_name}'. "
+            "Scale for {household_size} people and {servings} serving(s). "
+            "JSON structure: [{{'name': '...', 'quantity': 0.0, 'unit': '...', 'notes': '...'}}]"
+        )
+
+        # 3. Create the ChatPromptTemplate
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", system_content),
+            ("human", human_content)
+        ])
+
+
         try:
-            messages = [
-                SystemMessage(content="You are a Nigerian cooking expert. Generate ingredient lists for meals."),
-                HumanMessage(content=prompt)
-            ]
-            response = self.llm.invoke(messages)
+            formatted_messages = prompt_template.format_messages(
+                meal_name=meal_name,
+                household_size=household_size,
+                servings=servings
+            )
+            response = self.llm.invoke(formatted_messages)
             
             # Parse JSON response
             ingredients = self._parse_ingredients_response(response.content)

@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Meal Planning API...")
     
     # Check environment
-    db_url = os.environ.get("DATABASE_URL")
+    db_url = os.environ.get("DATABASE_URL_NEON")
     if not db_url:
         logger.warning("⚠️  DATABASE_URL not set - running without database")
     else:

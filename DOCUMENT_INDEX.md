@@ -461,3 +461,79 @@ After reading this system, you'll understand:
 
 *Navigation Guide for Meal Planning System*
 *Last Updated: 2026-02-15*
+
+
+
+
+
+
+    # def map_ingredient_to_product(
+    #     self,
+    #     ingredient_name: str,
+    #     quantity: float,
+    #     unit: str
+    # ) -> Dict:
+    #     """
+    #     Map an ingredient to a QuickMarket product.
+        
+    #     Args:
+    #         ingredient_name: Name of the ingredient (from meal plan)
+    #         quantity: Quantity needed
+    #         unit: Unit of measurement (kg, ml, pieces, cups, etc.)
+            
+    #     Returns:
+    #         Dict with:
+    #         {
+    #             "ingredient_name": "Egusi seeds",
+    #             "quantity": 500,
+    #             "unit": "g",
+    #             "mapped_product_id": "prod_123",
+    #             "product_name": "Ground Egusi (500g pack)",
+    #             "product_price": 2500,
+    #             "availability_status": "available|unavailable|substitute",
+    #             "substitute_product_id": null or "prod_456",
+    #             "confidence_score": 0.95
+    #         }
+    #     """
+    #     # Normalize input
+    #     ingredient_normalized = self._normalize_ingredient_name(ingredient_name)
+        
+    #     # Try exact match first
+    #     exact_match = self._find_exact_match(ingredient_normalized)
+    #     if exact_match:
+    #         return self._build_mapping_result(
+    #             ingredient_name, quantity, unit, exact_match, confidence=0.95
+    #         )
+        
+    #     # Try fuzzy match
+    #     fuzzy_matches = self._find_fuzzy_matches(ingredient_normalized)
+    #     if fuzzy_matches:
+    #         best_match = fuzzy_matches[0]
+    #         return self._build_mapping_result(
+    #             ingredient_name, quantity, unit, best_match, confidence=best_match["confidence"]
+    #         )
+        
+    #     # Try category-based match
+    #     category = self._infer_ingredient_category(ingredient_normalized)
+    #     if category:
+    #         category_matches = self._find_by_category(category)
+    #         if category_matches:
+    #             best_match = category_matches[0]
+    #             return self._build_mapping_result(
+    #                 ingredient_name, quantity, unit, best_match, confidence=0.6
+    #             )
+        
+    #     # No match found - return unavailable
+    #     return {
+    #         "ingredient_name": ingredient_name,
+    #         "quantity": quantity,
+    #         "unit": unit,
+    #         "mapped_product_id": None,
+    #         "product_name": None,
+    #         "product_price": None,
+    #         "availability_status": "unavailable",
+    #         "substitute_product_id": None,
+    #         "confidence_score": 0.0,
+    #         "notes": f"No product match found for '{ingredient_name}'. User can search manually."
+    #     }
+    

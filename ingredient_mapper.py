@@ -5,6 +5,7 @@ Handles matching AI-generated ingredients to available products.
 import logging
 from typing import Optional, List, Dict, Tuple
 from difflib import SequenceMatcher
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class IngredientProductMapper:
         self.product_catalog = product_catalog or []
         self.ingredient_aliases = self._load_ingredient_aliases()
         self.category_mappings = self._load_category_mappings()
+
     
     def map_ingredient_to_product(
         self,
@@ -29,79 +31,47 @@ class IngredientProductMapper:
         quantity: float,
         unit: str
     ) -> Dict:
-        """
-        Map an ingredient to a QuickMarket product.
+        # 1. Normalize (Alias check + lowercase/strip)
+        normalized = self._normalize_ingredient_name(ingredient_name)
         
-        Args:
-            ingredient_name: Name of the ingredient (from meal plan)
-            quantity: Quantity needed
-            unit: Unit of measurement (kg, ml, pieces, cups, etc.)
-            
-        Returns:
-            Dict with:
-            {
-                "ingredient_name": "Egusi seeds",
-                "quantity": 500,
-                "unit": "g",
-                "mapped_product_id": "prod_123",
-                "product_name": "Ground Egusi (500g pack)",
-                "product_price": 2500,
-                "availability_status": "available|unavailable|substitute",
-                "substitute_product_id": null or "prod_456",
-                "confidence_score": 0.95
-            }
-        """
-        # Normalize input
-        ingredient_normalized = self._normalize_ingredient_name(ingredient_name)
+        # 2. Multi-Field Search (Name + Descriptions)
+        match = self._find_exact_match(normalized)
         
-        # Try exact match first
-        exact_match = self._find_exact_match(ingredient_normalized)
-        if exact_match:
+        # 3. Fuzzy Match Fallback (If exact/desc match failed)
+        if not match:
+            fuzzy_results = self._find_fuzzy_matches(normalized)
+            if fuzzy_results:
+                match = fuzzy_results[0]
+                confidence = match["confidence"]
+        else:
+            confidence = 0.95
+
+        # 5. Build Result
+        if match:
             return self._build_mapping_result(
-                ingredient_name, quantity, unit, exact_match, confidence=0.95
+                ingredient_name, quantity, unit, match, confidence
             )
-        
-        # Try fuzzy match
-        fuzzy_matches = self._find_fuzzy_matches(ingredient_normalized)
-        if fuzzy_matches:
-            best_match = fuzzy_matches[0]
-            return self._build_mapping_result(
-                ingredient_name, quantity, unit, best_match, confidence=best_match["confidence"]
-            )
-        
-        # Try category-based match
-        category = self._infer_ingredient_category(ingredient_normalized)
-        if category:
-            category_matches = self._find_by_category(category)
-            if category_matches:
-                best_match = category_matches[0]
-                return self._build_mapping_result(
-                    ingredient_name, quantity, unit, best_match, confidence=0.6
-                )
-        
-        # No match found - return unavailable
+
         return {
             "ingredient_name": ingredient_name,
             "quantity": quantity,
             "unit": unit,
             "mapped_product_id": None,
             "product_name": None,
-            "product_price": None,
+            "product_price": 0,
             "availability_status": "unavailable",
-            "substitute_product_id": None,
             "confidence_score": 0.0,
-            "notes": f"No product match found for '{ingredient_name}'. User can search manually."
+            "notes": f"No product match found for '{ingredient_name}'"
         }
-    
+
+
     def _normalize_ingredient_name(self, name: str) -> str:
-        """Normalize ingredient name for matching."""
-        # Check aliases first
         for alias_list, canonical in self.ingredient_aliases.items():
             if name.lower() in [a.lower() for a in alias_list]:
-                return canonical
-        
-        # Otherwise just lowercase and strip
+                return canonical.lower()
+
         return name.lower().strip()
+    
     
     def _load_ingredient_aliases(self) -> Dict[Tuple[str, ...], str]:
         """Load map of ingredient aliases to canonical names."""
@@ -146,83 +116,94 @@ class IngredientProductMapper:
             ("curry powder", "curry"): "Curry Powder",
             ("thyme", "dried thyme"): "Thyme",
         }
+
     
     def _load_category_mappings(self) -> Dict[str, List[str]]:
         """Map ingredient categories to QuickMarket categories."""
         return {
-            "grains": ["rice", "cornmeal", "garri", "millet", "bread flour"],
-            "proteins": ["chicken", "beef", "fish", "eggs", "crayfish", "stockfish"],
-            "legumes": ["beans", "lentils", "peas"],
-            "vegetables": ["tomato", "onion", "pepper", "spinach", "carrot", "cucumber"],
-            "oils": ["palm oil", "vegetable oil"],
-            "seasonings": ["salt", "garlic", "ginger", "curry powder", "thyme", "tomato paste"],
-            "dairy": ["milk", "cheese", "butter", "yogurt"],
+            "grains": [
+                "rice", "cornmeal", "garri", "millet", "bread flour"
+            ],
+            "proteins": [
+                "chicken", "beef", "fish", "eggs", "crayfish", "stockfish"
+            ],
+            "legumes": [
+                "beans", "lentils", "peas"
+            ],
+            "vegetables": [
+                "tomato", "onion", "pepper", "spinach", "carrot", "cucumber"
+            ],
+            "oils": [
+                "palm oil", "vegetable oil"
+            ],
+            "seasonings": [
+                "salt", "garlic", "ginger", "curry powder", "thyme", "tomato paste"
+            ],
+            "dairy": [
+                "milk", "cheese", "butter", "yogurt"
+            ],
         }
     
+
     def _find_exact_match(self, ingredient_name: str) -> Optional[Dict]:
-        """Find exact product match in catalog."""
-        ingredient_lower = ingredient_name.lower()
+        """
+            Enhanced search: Handles singular/plural forms, punctuation,
+            and searches across name + short/long descriptions.
+        """
+        # Normalize input
+        query = re.sub(r'[^\w\s]', '', ingredient_name.lower().strip())
         
+        # Generate plural form (simple 's' addition)
+        if not query.endswith('s'):
+            query_plural = query + 's'
+        else:
+            query_plural = query[:-1]  # singular fallback
+
         for product in self.product_catalog:
-            product_name_lower = product.get("name", "").lower()
-            
-            # Exact match
-            if ingredient_lower == product_name_lower:
+            # Normalize product fields
+            name = re.sub(r'[^\w\s]', '', product.get("name", "").lower())
+            short_desc = re.sub(r'[^\w\s]', '', product.get("short_description", "").lower())
+            long_desc = re.sub(r'[^\w\s]', '', product.get("long_description", "").lower())
+
+            combined_text = f"{name} {short_desc} {long_desc}"
+
+            # Check direct match
+            tokens = combined_text.split()
+            if query in tokens:
+                return product
+
+            # Check plural/singular forms
+            if re.search(r'\b' + re.escape(query_plural) + r'\b', combined_text):
                 return product
             
-            # Product name contains ingredient
-            if ingredient_lower in product_name_lower:
-                return product
-        
         return None
-    
-    def _find_fuzzy_matches(
-        self,
-        ingredient_name: str,
-        threshold: float = 0.7
-    ) -> List[Dict]:
-        """Find fuzzy matches using sequence matching."""
+
+
+    def _find_fuzzy_matches(self, ingredient_name: str, threshold: float = 0.7) -> list:
+        """
+        Fuzzy match fallback: handles minor typos or variations.
+        """
         matches = []
+        query = ingredient_name.lower().strip()
         
         for product in self.product_catalog:
-            product_name = product.get("name", "").lower()
-            
-            # Calculate similarity
-            similarity = SequenceMatcher(
-                None, ingredient_name, product_name
-            ).ratio()
+            text = " ".join([
+                product.get("name", ""),
+                product.get("short_description", ""),
+                product.get("long_description", "")
+            ]).lower()
+
+            similarity = SequenceMatcher(None, query, text).ratio()
             
             if similarity >= threshold:
                 product_with_confidence = product.copy()
                 product_with_confidence["confidence"] = similarity
                 matches.append(product_with_confidence)
-        
+
         # Sort by confidence descending
         return sorted(matches, key=lambda x: x["confidence"], reverse=True)
-    
-    def _infer_ingredient_category(self, ingredient_name: str) -> Optional[str]:
-        """Infer ingredient category from name."""
-        ingredient_lower = ingredient_name.lower()
-        
-        for category, keywords in self.category_mappings.items():
-            for keyword in keywords:
-                if ingredient_lower == keyword or ingredient_lower in keyword:
-                    return category
-        
-        return None
-    
-    def _find_by_category(self, category: str) -> List[Dict]:
-        """Find products in the same category."""
-        matches = []
-        
-        for product in self.product_catalog:
-            product_category = product.get("category", "").lower()
-            
-            if category.lower() in product_category or product_category == category.lower():
-                matches.append(product)
-        
-        return matches[:3]  # Top 3 results
-    
+
+
     def _build_mapping_result(
         self,
         ingredient_name: str,
@@ -248,17 +229,19 @@ class IngredientProductMapper:
             "unit": unit,
             "mapped_product_id": product.get("id"),
             "product_name": product.get("name"),
-            "product_price": product.get("price"),
+            "product_price": product.get("base_price"),
             "availability_status": availability,
-            "substitute_product_id": substitute.get("id") if substitute else None,
             "confidence_score": confidence,
             "notes": f"Mapped with {confidence:.0%} confidence"
         }
+    
     
     def update_catalog(self, new_products: List[Dict]):
         """Update product catalog (for real-time price/availability updates)."""
         self.product_catalog = new_products
         logger.info(f"Product catalog updated with {len(new_products)} products")
+
+
 
 
 class CartBuilder:
@@ -326,3 +309,6 @@ class CartBuilder:
             "items": added_items,
             "skipped_items": skipped_items
         }
+
+    
+    

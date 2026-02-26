@@ -15,6 +15,7 @@ import logging
 from meal_planner import MealPlanGenerator, IngredientGenerator
 from ingredient_mapper import IngredientProductMapper, CartBuilder
 from learning_system import UserLearningSystem
+from utils.user_preferences import get_latest_user_preferences
 from config import get_db_session
 from models import (
     User, UserPreference, MealPlan, PlanMeal, 
@@ -103,7 +104,7 @@ def setup_meal_planning_routes(app: FastAPI):
     # The catalog will be populated by your existing backend (see PRODUCT_CATALOG_URL)
     ingredient_mapper = IngredientProductMapper(product_catalog=[])
 
-    PRODUCT_CATALOG_URL = os.environ.get("PRODUCT_CATALOG_URL") or os.environ.get("BACKEND_CATALOG_URL")
+    PRODUCT_CATALOG_URL = os.environ.get("PRODUCT_CATALOG_URL")
     # Background refresh interval (seconds)
     CATALOG_REFRESH_INTERVAL = int(os.environ.get("CATALOG_REFRESH_INTERVAL", "600"))
 
@@ -140,6 +141,8 @@ def setup_meal_planning_routes(app: FastAPI):
             task.cancel()
 
     app.add_event_handler("shutdown", _stop_catalog_task)
+    
+    
     
     # ========== EPIC 1: MEAL PLAN GENERATION ==========
     
@@ -296,17 +299,28 @@ def setup_meal_planning_routes(app: FastAPI):
         try:
             user_id = request.user_id
             # TODO: Fetch user preferences and purchase history from your database
-            user_preferences = None
-            purchase_history = None
-            household_size = 1
-            budget_level = "moderate"
+            # user_preferences = None
+            # purchase_history = None
+            # household_size = 1
+            # budget_level = "moderate"
+            
+            preference_data = await get_latest_user_preferences(
+                session,
+                request.user_id
+            )
+            
+            print(f"\n\nThis is preference_data\n\n{preference_data}")
+
+            user_preferences = preference_data.user_preferences
+            budget_level = preference_data.budget_level
+            household_size = preference_data.household_size
             
             # Generate meal plan using AI
             meal_plan = meal_generator.generate_meal_plan(
                 user_id=user_id,
                 duration=request.duration,
                 meal_preference=user_preferences,
-                purchase_history=purchase_history,
+                purchase_history=None,
                 household_size=household_size,
                 budget_level=budget_level
             )
@@ -342,8 +356,8 @@ def setup_meal_planning_routes(app: FastAPI):
             logger.error(f"Error generating meal plan: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     
-    # ========== EPIC 2: INGREDIENT GENERATION & PURCHASE ==========
     
+    # ========== EPIC 2: INGREDIENT GENERATION & PURCHASE ==========
     @app.post("/api/v1/meal-planning/ingredients")
     async def get_meal_ingredients(
         request: GetIngredientsRequest,
@@ -461,12 +475,16 @@ def setup_meal_planning_routes(app: FastAPI):
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         resp = await client.get(PRODUCT_CATALOG_URL)
                         if resp.status_code == 200:
-                            products = resp.json()
-                            # Expecting list of products with fields: id, name, category, price, availability_status
-                            ingredient_mapper.update_catalog(products)
-                            logger.info(f"Loaded product catalog with {len(products)} items from backend")
-                        else:
-                            logger.warning(f"Failed to load product catalog: {resp.status_code}")
+                            response_data = resp.json()
+                            
+                            # Extract the actual list from the 'data' key
+                            product_list = response_data.get('data', [])
+                            
+                            if isinstance(product_list, list):
+                                ingredient_mapper.update_catalog(product_list)
+                                logger.info(f"Loaded product catalog with {len(product_list)} items")
+                            else:
+                                logger.warning("Backend returned success but 'data' was not a list")
                 except Exception as e:
                     logger.warning(f"Error fetching product catalog: {e}")
 
@@ -474,6 +492,8 @@ def setup_meal_planning_routes(app: FastAPI):
             mapped_ingredients = []
             total_cost = 0
             unavailable_count = 0
+            
+            print(f"\n\ningredients: {ingredients}\n\n")
             
             for ingredient in ingredients:
                 mapped = ingredient_mapper.map_ingredient_to_product(
@@ -521,6 +541,7 @@ def setup_meal_planning_routes(app: FastAPI):
         except Exception as e:
             logger.error(f"Error getting ingredients: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
     
     @app.post("/api/v1/meal-planning/add-to-cart")
     async def add_ingredients_to_cart(
