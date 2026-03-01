@@ -10,6 +10,8 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 import os
+
+from catalog_service import CatalogService
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -118,7 +120,7 @@ class MealPlanGenerator:
     def _get_system_prompt(self) -> str:
         """Get the system prompt for meal plan generation."""
         
-        return """You are a meal planning AI specialist for QuickMarket, a Nigerian grocery delivery service.
+        return """You are a Nigerian meal planning AI specialist for QuickMarket, a Nigerian grocery delivery service.
         Your role is to generate personalized weekly or monthly meal plans for users.
 
         GUIDELINES:
@@ -238,11 +240,15 @@ class MealPlanGenerator:
         return meal_plan
 
 
+
+BASE_CATALOG_URL = os.environ.get("BASE_CATALOG_URL")
+
 class IngredientGenerator:
     """Generate ingredient lists for meals with portion adjustments."""
     
-    def __init__(self):
+    def __init__(self, catalog_service: CatalogService):
         """Initialize the ingredient generator."""
+        self.catalog_service = catalog_service
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             temperature=0.7,
@@ -252,66 +258,159 @@ class IngredientGenerator:
         self.ingredient_database = self._load_ingredient_templates()
     
     
-    def generate_ingredients(
+    async def init_categories(self):
+        """Ensure categories are loaded before use."""
+        await self.catalog_service.load_categories()
+    
+    async def generate_ingredients(
         self,
         meal_name: str,
-        household_size: int = 1,
-        servings: int = 1
-    ) -> List[Dict]:
-        """
-        Generate ingredient list for a meal with adjusted quantities.
+        household_size: int = 1
+    ):
+
+        category_context = self.catalog_service.get_category_context_string()
         
-        Args:
-            meal_name: Name of the meal
-            household_size: Number of people
-            servings: Number of servings needed
+        ingredient_category_overrides = {
+            "Garri": "Grains",
+            "Rice": "Grain & Rice",
+            "Beans": "Grain & Beans",
+            "Semovita": "Grains & Flours",
+
+            # Cooking Essentials / Oils
+            "Vegetable Oil": "Cooking Essentials",
+            "Palm Oil": "Cooking Essentials",
+            "Groundnut Oil": "Cooking Essentials",
+
+            # Proteins
+            "Chicken": "Proteins",
+            "Beef": "Proteins",
+            "Fish": "Proteins",
+            "Egg": "Proteins",
+
+            # Vegetables & Fruits
+            "Onion": "Vegetables",
+            "Tomato": "Vegetables",
+            "Pepper": "Vegetables",
+            "Spinach": "Vegetables",
+            "Carrot": "Vegetables",
+
+            # Spices & Herbs
+            "Salt": "Cooking Essentials",
+            "Crayfish": "Proteins",
+            "Thyme": "Spices",
+            "Curry": "Spices",
+        }
+
+        system_prompt = f"""
+            You are a Nigerian grocery-aware AI chef.
+
+            You MUST generate ingredients that strictly align with the backend grocery catalog.
+
+            AVAILABLE CATEGORIES AND THEIR ALLOWED UNITS. DONT MAKE ANY CATEGORY OUTSIDE THESE:
+            {category_context}
             
-        Returns:
-            List of ingredients with quantities
+            ALSO NOTE SOME CATEGORY OVERRIDES:
+            "Garri": "Grains",
+            "Rice": "Grain & Rice",
+            "Beans": "Grain & Beans",
+            "Semovita": "Grains & Flours",
+
+            # Cooking Essentials / Oils
+            "Vegetable Oil": "Cooking Essentials",
+            "Palm Oil": "Cooking Essentials",
+            "Groundnut Oil": "Cooking Essentials",
+
+            # Proteins
+            "Chicken": "Proteins",
+            "Beef": "Proteins",
+            "Fish": "Proteins",
+            "Egg": "Proteins",
+
+            # Vegetables & Fruits
+            "Onion": "Vegetables",
+            "Tomato": "Vegetables",
+            "Pepper": "Vegetables",
+            "Spinach": "Vegetables",
+            "Carrot": "Vegetables",
+
+            # Spices & Herbs
+            Salt": Cooking Essentials,
+            Crayfish: Proteins,
+            Thyme": Spices",
+            Curry": Spices,
+            
+
+            STRICT RULES:
+            1. Every ingredient MUST include:
+            - DONT MAKE UP ANY CATEGORY OUTSIDE THE ABOVE
+            - name
+            - category_name (must exactly match one of the categories above)
+            - quantity
+            - unit (must match allowed units of its category)
+            2. Quantities must be realistic for the household size.
+            3. If household_size = 1, generate quantities suitable for ONE person only.
+            4. Use metric units or exact allowed unit strings from the category.
+            5. Avoid descriptive adjectives in ingredient names.
+            7. DO NOT generate water as an ingredient.
+            8. Do NOT generate generic items like:
+            - Water
+            - Air
+            - Firewood
+            - Gas
+            - Heat
+            9. Only generate ingredients that are purchasable grocery items.
+            10. Return ONLY valid JSON array.
+            
         """
 
-        # 1. Define the System Prompt (Behavior & Rules)
-        system_content = (
-            "You are a Nigerian cooking expert and grocery catalog mapper. "
-            "Your goal is to generate ingredients that match a store's product list. "
-            "\n\nSTRICT NAMING RULES:\n"
-            "1. Use ONLY exact generic names: 'Rice', 'Tomato Paste', 'Vegetable Oil', 'Onion', "
-            "'Ginger', 'Garlic', 'Salt', 'Curry Powder', 'Thyme', 'Chicken', 'Beef', 'Pepper', 'Crayfish'.\n"
-            "2. Do NOT use descriptive adjectives (e.g., NOT 'fresh onions', NOT 'long-grain rice').\n"
-            "3. Units must be metric (kg, g, l, ml) or 'pieces'. Avoid 'cups'.\n"
-            "4. Return ONLY valid JSON. No markdown backticks, no text explanations."
-        )
+        human_prompt = """
+            Generate ingredients for: "{meal_name}"
 
-        # 2. Define the Human Prompt (The dynamic variables)
-        human_content = (
-            "Generate a JSON ingredient list for '{meal_name}'. "
-            "Scale for {household_size} people and {servings} serving(s). "
-            "JSON structure: [{{'name': '...', 'quantity': 0.0, 'unit': '...', 'notes': '...'}}]"
-        )
+            Household size: {household_size}
 
-        # 3. Create the ChatPromptTemplate
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", system_content),
-            ("human", human_content)
+            JSON format:
+            [
+            {{
+                "name": "Rice",
+                "category_name": "Grain & Rice",
+                "quantity": 1,
+                "unit": "1kg"
+            }}
+            ]
+        """
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", human_prompt)
         ])
 
-
         try:
-            formatted_messages = prompt_template.format_messages(
+            messages = prompt.format_messages(
                 meal_name=meal_name,
-                household_size=household_size,
-                servings=servings
+                household_size=household_size
             )
-            response = self.llm.invoke(formatted_messages)
-            
-            # Parse JSON response
-            ingredients = self._parse_ingredients_response(response.content)
-            return ingredients
-            
+
+            # response = self.llm.invoke(messages)
+            response = await self.llm.ainvoke(messages)
+
+            return self._parse_response(response.content)
+
         except Exception as e:
-            logger.error(f"Error generating ingredients for {meal_name}: {e}")
+            logger.error(f"Ingredient generation failed: {e}")
             return []
-    
+
+    def _parse_response(self, content: str):
+        try:
+            start = content.find("[")
+            end = content.rfind("]") + 1
+            json_str = content[start:end]
+            return json.loads(json_str)
+        except Exception as e:
+            logger.error(f"Failed to parse ingredient JSON: {e}")
+            return []
+        
+        
+        
     def _load_ingredient_templates(self) -> Dict:
         """Load predefined ingredient templates for common meals."""
         return {

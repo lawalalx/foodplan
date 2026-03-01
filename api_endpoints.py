@@ -9,14 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List, Dict
 from datetime import datetime
-import uuid
-import logging
+import uuid, os, httpx, asyncio, logging
 
 from meal_planner import MealPlanGenerator, IngredientGenerator
 from ingredient_mapper import IngredientProductMapper, CartBuilder, fetch_all_products
 from learning_system import UserLearningSystem
 from utils.user_preferences import get_latest_user_preferences
 from config import get_db_session
+
+from catalog_service import CatalogService
 from models import (
     User, UserPreference, MealPlan, PlanMeal, 
     PlanMealIngredient, MealFeedback, PurchaseHistory
@@ -88,17 +89,18 @@ class MealFeedbackRequest(BaseModel):
 # ============================================================================
 # SETUP FUNCTION FOR FASTAPI APP
 # ============================================================================
+BASE_CATALOG_URL = os.environ.get("BASE_CATALOG_URL")
 
 def setup_meal_planning_routes(app: FastAPI):
     """Register all meal planning endpoints."""
     
+    
     # Initialize services
     meal_generator = MealPlanGenerator()
-    ingredient_generator = IngredientGenerator()
+    ingredient_generator = IngredientGenerator(catalog_service=CatalogService(base_url=BASE_CATALOG_URL))
+    
+    
     learning_system = UserLearningSystem()
-    import os
-    import httpx
-    import asyncio
 
     # Placeholder for product mapper - initialize with empty catalog
     # The catalog will be populated by your existing backend (see PRODUCT_CATALOG_URL)
@@ -228,6 +230,8 @@ def setup_meal_planning_routes(app: FastAPI):
             await session.rollback()
             logger.error(f"Error saving preferences: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    
     
     @app.post("/api/v1/meal-planning/generate")
     async def generate_meal_plan(
@@ -456,9 +460,11 @@ def setup_meal_planning_routes(app: FastAPI):
         - 400: Meal not found or couldn't generate ingredients
         - 500: Ingredient generation or mapping error
         """
+        await ingredient_generator.init_categories()
+        
         try:
             # Generate ingredients
-            ingredients = ingredient_generator.generate_ingredients(
+            ingredients = await ingredient_generator.generate_ingredients(
                 meal_name=request.meal_name,
                 household_size=request.household_size
             )
@@ -499,7 +505,9 @@ def setup_meal_planning_routes(app: FastAPI):
                 mapped = ingredient_mapper.map_ingredient_to_product(
                     ingredient_name=ingredient.get("name"),
                     quantity=ingredient.get("quantity", 0),
-                    unit=ingredient.get("unit", "")
+                    category_name=ingredient.get("category_name"),
+                    unit=ingredient.get("unit", ""),
+                    
                 )
 
                 # If still unmatched and backend supports search, try single-item search fallback
@@ -513,7 +521,8 @@ def setup_meal_planning_routes(app: FastAPI):
                             mapped = ingredient_mapper.map_ingredient_to_product(
                                 ingredient_name=ingredient.get("name"),
                                 quantity=ingredient.get("quantity", 0),
-                                unit=ingredient.get("unit", "")
+                                unit=ingredient.get("unit", ""),
+                                category_name=ingredient.get("category_name"),
                             )
 
                     except Exception as se:
