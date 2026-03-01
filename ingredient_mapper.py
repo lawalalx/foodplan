@@ -47,6 +47,7 @@ TAG_MAP = {
     "vegetable oil": ["vegetable oil", "cooking oil", "groundnut oil", "groundnuts oil"],
     "groundnut oil": ["groundnut oil", "groundnuts oil", "peanut oil", "cooking oil", "vegetable oil"],
     "tomato paste": ["tomato paste", "tomato puree"],
+    "tomato puree": ["tomato paste", "tomato puree"],
     "egusi": ["egusi", "melon seeds"],
     "salt": ["salt", "table salt"],
     "garlic": ["garlic", "garlic cloves"],
