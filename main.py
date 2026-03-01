@@ -11,6 +11,7 @@ import os
 
 from api_endpoints import setup_meal_planning_routes
 from config import init_db, close_db, check_db_connection
+from config_env import settings
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Meal Planning API...")
     
     # Check environment
-    db_url = os.environ.get("DATABASE_URL_NEON")
+    db_url = settings.DATABASE_URL_NEON
     if not db_url:
         logger.warning("⚠️  DATABASE_URL not set - running without database")
     else:

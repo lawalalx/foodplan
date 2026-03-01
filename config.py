@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlmodel import SQLModel, select
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import logging
+from config_env import settings
 
 logger = logging.getLogger(__name__)
 
 # Get database URL from environment
-DATABASE_URL = os.environ.get("DATABASE_URL_NEON")
+DATABASE_URL = settings.DATABASE_URL_NEON
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable not set. Please configure it in .env")

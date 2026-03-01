@@ -17,6 +17,7 @@ from learning_system import UserLearningSystem
 from utils.user_preferences import get_latest_user_preferences
 from config import get_db_session
 
+from config_env import settings
 from catalog_service import CatalogService
 from models import (
     User, UserPreference, MealPlan, PlanMeal, 
@@ -106,9 +107,9 @@ def setup_meal_planning_routes(app: FastAPI):
     # The catalog will be populated by your existing backend (see PRODUCT_CATALOG_URL)
     ingredient_mapper = IngredientProductMapper(product_catalog=[])
 
-    PRODUCT_CATALOG_URL = os.environ.get("PRODUCT_CATALOG_URL")
+    PRODUCT_CATALOG_URL = settings.PRODUCT_CATALOG_URL
     # Background refresh interval (seconds)
-    CATALOG_REFRESH_INTERVAL = int(os.environ.get("CATALOG_REFRESH_INTERVAL", "600"))
+    CATALOG_REFRESH_INTERVAL = settings.CATALOG_REFRESH_INTERVAL
 
     async def _catalog_refresher():
         """Background task that periodically refreshes the product catalog."""

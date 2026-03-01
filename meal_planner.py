@@ -12,6 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import os
 
 from catalog_service import CatalogService
+from model import llm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,11 +25,7 @@ class MealPlanGenerator:
     
     def __init__(self):
         """Initialize the meal plan generator with LLM."""
-        self.llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-            api_key=os.environ.get("GROQ_API_KEY")
-        )
+        self.llm = llm
     
     def generate_meal_plan(
         self,
@@ -249,11 +246,7 @@ class IngredientGenerator:
     def __init__(self, catalog_service: CatalogService):
         """Initialize the ingredient generator."""
         self.catalog_service = catalog_service
-        self.llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-            api_key=os.environ.get("GROQ_API_KEY")
-        )
+        self.llm = llm
         # Load ingredient templates
         self.ingredient_database = self._load_ingredient_templates()
     

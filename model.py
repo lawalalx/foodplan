@@ -1,7 +1,11 @@
 
 from openai import OpenAI
-from dotenv import load_dotenv
+from langchain_openai import AzureChatOpenAI
+from config_env import settings
+
 import os
+from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -19,3 +23,16 @@ client = OpenAI(
 )
 
 MODEL_NAME = "Qwen/Qwen3-VL-235B-A22B-Instruct:novita"
+
+
+
+llm = AzureChatOpenAI(
+    azure_deployment=settings.AZURE_OPENAI_DEPLOYMENT,  # or your deployment
+    api_key=settings.AZURE_OPENAI_API_KEY,
+    api_version=settings.AZURE_OPENAI_API_VERSION,
+    model=settings.AZURE_OPENAI_DEPLOYMENT,
+    temperature=0,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
+)
