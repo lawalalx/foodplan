@@ -54,6 +54,7 @@ TAG_MAP = {
     "ginger": ["ginger", "ginger root"],
     "curry powder": ["curry powder", "curry"],
     "thyme": ["thyme", "dried thyme"],
+    "maggi": ["maggi", "tasty cubes", "mamador", "sasoning", "gino max", "royco", "terra", "knorr"]
 }
 
 
@@ -328,6 +329,8 @@ async def fetch_all_products(base_url: str, limit: int = 100, max_pages: int = 2
                     break
 
                 data = resp.json()
+                
+                print(f"This is the lenght of the products: {len(data)}\n\n")
 
                 # Handle both formats:
                 # Case 1: {"success": true, "data": [...]}
