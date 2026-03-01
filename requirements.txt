@@ -28,3 +28,4 @@ langchain_groq
 sqlmodel>=0.0.14
 asyncpg>=0.28.0
 sqlalchemy[asyncio]>=2.0.0
+loguru
