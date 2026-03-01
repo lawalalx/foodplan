@@ -21,10 +21,10 @@ TAG_MAP = {
     "millet": ["millet", "millet flour"],
 
     # Proteins
-    "chicken": ["chicken", "poultry"],
+    "chicken": ["chicken", "poultry", "white meat"],
     "beef": ["beef", "cow meat"],
     "fish": ["fish", "seafood", "frozen fish"],
-    "crayfish": ["crayfish", "dried shrimp", "shrimp"],
+    "crayfish": ["crayfish", "dried shrimp", "shrimp", "cray fish"],
     "stockfish": ["stockfish", "dried fish"],
     "eggs": ["eggs", "chicken eggs"],
 
@@ -69,11 +69,24 @@ class IngredientNormalizer:
         text = re.sub(r"[^\w\s]", "", text.lower().strip())
         return text
 
+
     def canonical(self, ingredient_name: str) -> str:
         norm = self.normalize(ingredient_name)
+
+        # direct match
         for canonical, aliases in self.tag_map.items():
             if norm in aliases:
                 return canonical
+
+        # NEW: token-based detection
+        tokens = set(norm.split())
+
+        for canonical, aliases in self.tag_map.items():
+            for alias in aliases:
+                alias_tokens = set(alias.split())
+                if alias_tokens.issubset(tokens):
+                    return canonical
+
         return norm
     
 
@@ -121,7 +134,7 @@ class IngredientProductMapper:
                     confidence
                 )
 
-        # 2️⃣ 🔥 FALLBACK: Global search (only if strict failed)
+        #  FALLBACK: Global search (only if strict failed)
         logger.info(
             f"Falling back to global search for '{ingredient_name}'"
         )

@@ -304,7 +304,7 @@ class IngredientGenerator:
         system_prompt = f"""
             You are a Nigerian grocery-aware AI chef.
 
-            You MUST generate ingredients that strictly align with the backend grocery catalog.
+            You MUST generate comprehensive and detailed ingredients that strictly align with the backend grocery catalog.
 
             AVAILABLE CATEGORIES AND THEIR ALLOWED UNITS. DONT MAKE ANY CATEGORY OUTSIDE THESE:
             {category_context}
