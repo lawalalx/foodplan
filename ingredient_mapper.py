@@ -312,6 +312,27 @@ class IngredientProductMapper:
 
 import httpx
 
+async def fetch_purchase_options(product_id: str) -> List[Dict]:
+    url = f"https://api.kittchens.com/api/products/{product_id}/purchase-options"
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        try:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return []
+
+            data = resp.json()
+
+            # Handle both formats
+            options = data.get("data") if isinstance(data, dict) else data
+            return options or []
+
+        except Exception as e:
+            logger.error(f"Failed to fetch purchase options: {e}")
+            return []
+        
+        
+
 async def fetch_all_products(base_url: str, limit: int = 100, max_pages: int = 20):
     """
     Fetch all products across paginated API.

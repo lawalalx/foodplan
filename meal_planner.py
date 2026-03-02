@@ -262,37 +262,6 @@ class IngredientGenerator:
     ):
 
         category_context = self.catalog_service.get_category_context_string()
-        
-        ingredient_category_overrides = {
-            "Garri": "Grains",
-            "Rice": "Grain & Rice",
-            "Beans": "Grain & Beans",
-            "Semovita": "Grains & Flours",
-
-            # Cooking Essentials / Oils
-            "Vegetable Oil": "Cooking Essentials",
-            "Palm Oil": "Cooking Essentials",
-            "Groundnut Oil": "Cooking Essentials",
-
-            # Proteins
-            "Chicken": "Proteins",
-            "Beef": "Proteins",
-            "Fish": "Proteins",
-            "Egg": "Proteins",
-
-            # Vegetables & Fruits
-            "Onion": "Vegetables",
-            "Tomato": "Vegetables",
-            "Pepper": "Vegetables",
-            "Spinach": "Vegetables",
-            "Carrot": "Vegetables",
-
-            # Spices & Herbs
-            "Salt": "Cooking Essentials",
-            "Crayfish": "Proteins",
-            "Thyme": "Spices",
-            "Curry": "Spices",
-        }
 
         system_prompt = f"""
             You are a Nigerian grocery-aware AI chef.
