@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_EMBEDDING_MODEL:  str = Field(..., validation_alias="AZURE_OPENAI_EMBEDDING_MODEL")
 
 
-        
+    HF_TOKEN: str = None
     DATABASE_URL_NEON: str = None
     PRODUCT_CATALOG_URL: str = "https://api.kittchens.com/api/products?page=1&limit=1000"
     CATALOG_REFRESH_INTERVAL: int = 3600  # in seconds (1 hour)
