@@ -376,6 +376,7 @@ async def fetch_all_products(base_url: str, limit: int = 100, max_pages: int = 2
 
 
 
+
 class CartBuilder:
     """Build shopping cart from selected ingredients."""
     

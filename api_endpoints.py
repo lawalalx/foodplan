@@ -23,6 +23,7 @@ from models import (
     User, UserPreference, MealPlan, PlanMeal, 
     PlanMealIngredient, MealFeedback, PurchaseHistory
 )
+from price_agent import price_ingredients
 
 logger = logging.getLogger(__name__)
 
@@ -463,96 +464,183 @@ def setup_meal_planning_routes(app: FastAPI):
         """
         await ingredient_generator.init_categories()
         
+        # try:
+        #     # Generate ingredients
+        #     ingredients = await ingredient_generator.generate_ingredients(
+        #         meal_name=request.meal_name,
+        #         household_size=request.household_size
+        #     )
+            
+        #     if not ingredients:
+        #         raise HTTPException(
+        #             status_code=400,
+        #             detail=f"Could not generate ingredients for '{request.meal_name}'"
+        #         )
+            
+        #     # If mapper has no catalog, try to load it from backend
+        #     if not ingredient_mapper.product_catalog and PRODUCT_CATALOG_URL:
+        #         try:
+        #             async with httpx.AsyncClient(timeout=10.0) as client:
+        #                 resp = await client.get(PRODUCT_CATALOG_URL)
+        #                 if resp.status_code == 200:
+        #                     response_data = resp.json()
+                            
+        #                     # Extract the actual list from the 'data' key
+        #                     product_list = response_data.get('data', [])
+                            
+        #                     if isinstance(product_list, list):
+        #                         ingredient_mapper.update_catalog(product_list)
+        #                         logger.info(f"Loaded product catalog with {len(product_list)} items")
+        #                     else:
+        #                         logger.warning("Backend returned success but 'data' was not a list")
+        #         except Exception as e:
+        #             logger.warning(f"Error fetching product catalog: {e}")
+
+        #     # Map to QuickMarket products
+        #     mapped_ingredients = []
+        #     total_cost = 0
+        #     unavailable_count = 0
+            
+        #     print(f"\n\ningredients: {ingredients}\n\n")
+            
+        #     for ingredient in ingredients:
+        #         mapped = ingredient_mapper.map_ingredient_to_product(
+        #             ingredient_name=ingredient.get("name"),
+        #             quantity=ingredient.get("quantity", 0),
+        #             category_name=ingredient.get("category_name"),
+        #             unit=ingredient.get("unit", ""),
+                    
+        #         )
+
+        #         # If still unmatched and backend supports search, try single-item search fallback
+        #         if not mapped.get("mapped_product_id") and PRODUCT_CATALOG_URL:
+        #             try:
+        #                 full_catalog = await fetch_all_products(PRODUCT_CATALOG_URL)
+
+        #                 if full_catalog:
+        #                     ingredient_mapper.update_catalog(full_catalog)
+
+        #                     mapped = ingredient_mapper.map_ingredient_to_product(
+        #                         ingredient_name=ingredient.get("name"),
+        #                         quantity=ingredient.get("quantity", 0),
+        #                         unit=ingredient.get("unit", ""),
+        #                         category_name=ingredient.get("category_name"),
+        #                     )
+
+        #             except Exception as se:
+        #                 logger.debug(f"Full catalog pagination failed: {se}")
+                                
+                
+                
+        #         mapped_ingredients.append(mapped)
+                
+        #         if mapped["availability_status"] != "available":
+        #             unavailable_count += 1
+        #         elif mapped.get("product_price"):
+        #             total_cost += mapped["product_price"] * ingredient.get("quantity", 0)
+            
+            
+        #     logger.info(f"Generated ingredients for meal '{request.meal_name}'")
+            
+        #     return IngredientListResponse(
+        #         meal_name=request.meal_name,
+        #         household_size=request.household_size,
+        #         ingredients=mapped_ingredients,
+        #         total_estimated_cost=total_cost if total_cost > 0 else None,
+        #         unavailable_count=unavailable_count
+        #     )
+        
+        # except Exception as e:
+        #     logger.error(f"Error getting ingredients: {e}")
+        #     raise HTTPException(status_code=500, detail=str(e))
+    
+
         try:
-            # Generate ingredients
+            # 1. Generate ingredients
             ingredients = await ingredient_generator.generate_ingredients(
                 meal_name=request.meal_name,
                 household_size=request.household_size
             )
-            
+
             if not ingredients:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Could not generate ingredients for '{request.meal_name}'"
                 )
-            
-            # If mapper has no catalog, try to load it from backend
+
+            # 2. Load product catalog once if missing
             if not ingredient_mapper.product_catalog and PRODUCT_CATALOG_URL:
                 try:
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         resp = await client.get(PRODUCT_CATALOG_URL)
                         if resp.status_code == 200:
-                            response_data = resp.json()
-                            
-                            # Extract the actual list from the 'data' key
-                            product_list = response_data.get('data', [])
-                            
-                            if isinstance(product_list, list):
-                                ingredient_mapper.update_catalog(product_list)
-                                logger.info(f"Loaded product catalog with {len(product_list)} items")
-                            else:
-                                logger.warning("Backend returned success but 'data' was not a list")
+                            data = resp.json().get("data", [])
+                            if isinstance(data, list):
+                                ingredient_mapper.update_catalog(data)
+                                logger.info(f"Loaded product catalog with {len(data)} items")
                 except Exception as e:
-                    logger.warning(f"Error fetching product catalog: {e}")
+                    logger.warning(f"Failed to preload product catalog: {e}")
 
-            # Map to QuickMarket products
+            # 3. Map ingredients → products
             mapped_ingredients = []
-            total_cost = 0
             unavailable_count = 0
-            
-            print(f"\n\ningredients: {ingredients}\n\n")
-            
+
             for ingredient in ingredients:
                 mapped = ingredient_mapper.map_ingredient_to_product(
                     ingredient_name=ingredient.get("name"),
                     quantity=ingredient.get("quantity", 0),
-                    category_name=ingredient.get("category_name"),
                     unit=ingredient.get("unit", ""),
-                    
+                    category_name=ingredient.get("category_name"),
                 )
 
-                # If still unmatched and backend supports search, try single-item search fallback
+                # Fallback: fetch full catalog if still unmatched
                 if not mapped.get("mapped_product_id") and PRODUCT_CATALOG_URL:
                     try:
                         full_catalog = await fetch_all_products(PRODUCT_CATALOG_URL)
-
                         if full_catalog:
                             ingredient_mapper.update_catalog(full_catalog)
-
                             mapped = ingredient_mapper.map_ingredient_to_product(
                                 ingredient_name=ingredient.get("name"),
                                 quantity=ingredient.get("quantity", 0),
                                 unit=ingredient.get("unit", ""),
                                 category_name=ingredient.get("category_name"),
                             )
+                    except Exception as e:
+                        logger.debug(f"Catalog fallback failed: {e}")
 
-                    except Exception as se:
-                        logger.debug(f"Full catalog pagination failed: {se}")
-                                
-                
-                
-                mapped_ingredients.append(mapped)
-                
-                if mapped["availability_status"] != "available":
+                if mapped.get("availability_status") != "available":
                     unavailable_count += 1
-                elif mapped.get("product_price"):
-                    total_cost += mapped["product_price"] * ingredient.get("quantity", 0)
-            
+
+                mapped_ingredients.append(mapped)
+
+            # 4. Pricing agent (single source of truth)
+            priced_result = await price_ingredients(mapped_ingredients)
+
             logger.info(f"Generated ingredients for meal '{request.meal_name}'")
-            
-            return IngredientListResponse(
+
+            # Ensure it's a dict and contains ingredients list
+            if not priced_result or "ingredients" not in priced_result:
+                priced_result = {
+                    "ingredients": mapped_ingredients,
+                    "total_estimated_cost": None
+                }
+
+            final_result =  IngredientListResponse(
                 meal_name=request.meal_name,
                 household_size=request.household_size,
-                ingredients=mapped_ingredients,
-                total_estimated_cost=total_cost if total_cost > 0 else None,
+                ingredients=priced_result["ingredients"],
+                total_estimated_cost=priced_result.get("total_estimated_cost"),
                 unavailable_count=unavailable_count
             )
-        
+                        
+            logger.info(f"\n\nThis is the final result: {final_result}")
+            return final_result
+
         except Exception as e:
             logger.error(f"Error getting ingredients: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-    
-    
+            raise HTTPException(status_code=500, detail="Failed to generate meal ingredients")
+
+
     @app.post("/api/v1/meal-planning/add-to-cart")
     async def add_ingredients_to_cart(
         request: CartAddRequest,

@@ -263,67 +263,135 @@ class IngredientGenerator:
 
         category_context = self.catalog_service.get_category_context_string()
 
+        # system_prompt = f"""
+        #     You are a Nigerian grocery-aware AI chef.
+
+        #     You MUST generate comprehensive and detailed ingredients that strictly align with the backend grocery catalog.
+
+        #     AVAILABLE CATEGORIES AND THEIR ALLOWED UNITS. DONT MAKE ANY CATEGORY OUTSIDE THESE:
+        #     {category_context}
+            
+        #     ALSO NOTE SOME CATEGORY OVERRIDES:
+        #     "Garri": "Grains",
+        #     "Rice": "Grain & Rice",
+        #     "Beans": "Grain & Beans",
+        #     "Semovita": "Grains & Flours",
+
+        #     # Cooking Essentials / Oils
+        #     "Vegetable Oil": "Cooking Essentials",
+        #     "Palm Oil": "Cooking Essentials",
+        #     "Groundnut Oil": "Cooking Essentials",
+
+        #     # Proteins
+        #     "Chicken": "Proteins",
+        #     "Beef": "Proteins",
+        #     "Fish": "Proteins",
+        #     "Egg": "Proteins",
+
+        #     # Vegetables & Fruits
+        #     "Onion": "Vegetables",
+        #     "Tomato": "Vegetables",
+        #     "Pepper": "Vegetables",
+        #     "Spinach": "Vegetables",
+        #     "Carrot": "Vegetables",
+
+        #     # Spices & Herbs
+        #     Salt": Cooking Essentials,
+        #     Crayfish: Proteins,
+        #     Thyme": Spices",
+        #     Curry": Spices,
+            
+
+        #     STRICT RULES:
+        #     1. Every ingredient MUST include:
+        #     - DONT MAKE UP ANY CATEGORY OUTSIDE THE ABOVE
+        #     - name
+        #     - category_name (must exactly match one of the categories above)
+        #     - quantity
+        #     - unit (must match allowed units of its category)
+        #     2. Quantities must be realistic for the household size.
+        #     3. If household_size = 1, generate quantities suitable for ONE person only.
+        #     4. Use metric units or exact allowed unit strings from the category.
+        #     5. Avoid descriptive adjectives in ingredient names.
+        #     7. DO NOT generate water as an ingredient.
+        #     8. Do NOT generate generic items like:
+        #     - Water
+        #     - Air
+        #     - Firewood
+        #     - Gas
+        #     - Heat
+        #     9. Only generate ingredients that are purchasable grocery items.
+        #     10. Return ONLY valid JSON array.
+            
+        # """
+
+        
         system_prompt = f"""
-            You are a Nigerian grocery-aware AI chef.
+            You are a Nigerian grocery-aware AI chef and planner.
 
-            You MUST generate comprehensive and detailed ingredients that strictly align with the backend grocery catalog.
-
-            AVAILABLE CATEGORIES AND THEIR ALLOWED UNITS. DONT MAKE ANY CATEGORY OUTSIDE THESE:
-            {category_context}
-            
-            ALSO NOTE SOME CATEGORY OVERRIDES:
-            "Garri": "Grains",
-            "Rice": "Grain & Rice",
-            "Beans": "Grain & Beans",
-            "Semovita": "Grains & Flours",
-
-            # Cooking Essentials / Oils
-            "Vegetable Oil": "Cooking Essentials",
-            "Palm Oil": "Cooking Essentials",
-            "Groundnut Oil": "Cooking Essentials",
-
-            # Proteins
-            "Chicken": "Proteins",
-            "Beef": "Proteins",
-            "Fish": "Proteins",
-            "Egg": "Proteins",
-
-            # Vegetables & Fruits
-            "Onion": "Vegetables",
-            "Tomato": "Vegetables",
-            "Pepper": "Vegetables",
-            "Spinach": "Vegetables",
-            "Carrot": "Vegetables",
-
-            # Spices & Herbs
-            Salt": Cooking Essentials,
-            Crayfish: Proteins,
-            Thyme": Spices",
-            Curry": Spices,
-            
+            Your goal is to generate ingredients that strictly follow the backend grocery catalog and reflect **bulk-first purchasing**. 
+            This means:
+            - Do NOT generate tiny individual units like "1 piece", "2 pieces", or "5 pieces" for vegetables, fruits, or proteins.
+            - Always pick the smallest available bulk unit that is reasonable for the household size, e.g., "half paint bucket (750g)", "1 bag (15kg)", "1 carton", etc.
+            - Quantities should scale logically with household size (e.g., for 1 person, pick 1 bulk unit but adjust the multiplier for 2–5 people).
+            - Avoid excessive waste — do not generate gigantic bulk units that far exceed household needs unless absolutely necessary.
 
             STRICT RULES:
             1. Every ingredient MUST include:
-            - DONT MAKE UP ANY CATEGORY OUTSIDE THE ABOVE
             - name
-            - category_name (must exactly match one of the categories above)
-            - quantity
-            - unit (must match allowed units of its category)
-            2. Quantities must be realistic for the household size.
-            3. If household_size = 1, generate quantities suitable for ONE person only.
-            4. Use metric units or exact allowed unit strings from the category.
+            - category_name (must exactly match allowed categories)
+            - quantity (a positive number, scaled for household size)
+            - unit (must match allowed units for its category)
+            2. Only use units that exist in the catalog for the category (ignore small, non-bulk units).
+            3. Quantities must be realistic for the household size and the recipe.
+            4. Use metric units or exact allowed units from the category.
             5. Avoid descriptive adjectives in ingredient names.
-            7. DO NOT generate water as an ingredient.
-            8. Do NOT generate generic items like:
-            - Water
-            - Air
-            - Firewood
-            - Gas
-            - Heat
-            9. Only generate ingredients that are purchasable grocery items.
-            10. Return ONLY valid JSON array.
-            
-        """
+            6. Do NOT generate water or generic items like: Air, Firewood, Gas, Heat.
+            7. Only generate ingredients that are purchasable grocery items.
+            8. Return ONLY valid JSON array.
+            9. For vegetables, fruits, proteins, and other perishable items:
+            - Pick the smallest bulk unit that is reasonably usable for the recipe.
+            - Do not return "1 piece", "2 pieces" etc.
+            - Example acceptable: "half paint bucket (750g)" instead of "5 pieces of tomato".
+            10. For grains, flours, and packaged foods, pick units that align with **bulk sizes**, but adjust quantity logically for the household size.
+            11. Ensure all quantities scale sensibly for **day, weekly, or monthly meal planning**.
+
+            AVAILABLE CATEGORIES AND THEIR ALLOWED UNITS:
+            {category_context}
+
+            CATEGORY OVERRIDES (enforce exactly):
+            - "Garri": "Grains"
+            - "Rice": "Grain & Rice"
+            - "Beans": "Grain & Beans"
+            - "Semovita": "Grains & Flours"
+            - "Vegetable Oil": "Cooking Essentials"
+            - "Palm Oil": "Cooking Essentials"
+            - "Groundnut Oil": "Cooking Essentials"
+            - "Chicken": "Proteins"
+            - "Beef": "Proteins"
+            - "Fish": "Proteins"
+            - "Egg": "Proteins"
+            - "Onion": "Vegetables"
+            - "Tomato": "Vegetables"
+            - "Pepper": "Vegetables"
+            - "Spinach": "Vegetables"
+            - "Carrot": "Vegetables"
+            - "Salt": "Cooking Essentials"
+            - "Crayfish": "Proteins"
+            - "Thyme": "Spices"
+            - "Curry": "Spices"
+
+            KEY EXAMPLES OF BULK-FIRST UNITS:
+            - Vegetables/Fruits: "half paint bucket (750g)", "1 paint bucket (1.5kg)", "1 bag (15kg)"
+            - Proteins: "1 paint bucket (600g)", "1 bag (2kg)", "half crate"
+            - Grains: "1 derica (600g)", "half paint bucket (2kg)", "1 bag (50kg)"
+            - Cooking Oils: "500ml", "1l", "2.5l", "5l"
+
+            NEVER USE:
+            - Tiny pieces, single items, or units that are not aligned with bulk-selling.
+
+            You MUST generate ingredients that are **practical for cooking**, scale for household size, and match the bulk units available in the catalog.
+            """
 
         human_prompt = """
             Generate ingredients for: "{meal_name}"
